@@ -18,8 +18,6 @@ on:
         type: choice
         options:
           - test
-          - stg
-          - prod
       action:
         description: 'Please Select The Command To Run { plan , apply, destroy }'
         required: true
