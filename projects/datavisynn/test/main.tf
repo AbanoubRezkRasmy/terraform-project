@@ -99,25 +99,6 @@ module "route53_hostedzone" {
   cluster_name = var.cluster_name
 }
 
-/* ------------------------------- ECR ------------------------------ */
-module "microservices_product" {
-  source = "git::https://github.com/AbanoubRezkRasmy/terraform-modules.git//ECR?ref=v1.0.0"
-  ecr_name = "microservices-product"
-  tags = {
-    Environment = "test"
-    Component   = "microservices-product"
-  }
-}
-
-module "microservices_user" {
-  source = "git::https://github.com/AbanoubRezkRasmy/terraform-modules.git//ECR?ref=v1.0.0"
-  ecr_name = "microservices-user"
-  tags = {
-    Environment = "test"
-    Component   = "microservices-user"
-  }
-}
-
 /* ------------------------------- ACM ------------------------------ */
 /*
 module "acm" {
