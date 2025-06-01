@@ -21,7 +21,7 @@ This repository contains Terraform configurations for managing AWS infrastructur
 
 ## 📦 Terraform Modules
 
-The infrastructure is managed using custom Terraform modules you can find it on this repo https://github.com/Khaled-SRE/terraform-modules.git
+The infrastructure is managed using custom Terraform modules you can find it on this repo https://github.com/AbanoubRezkRasmy/terraform-modules.git
 
 ## 🔄 Workflow
 
