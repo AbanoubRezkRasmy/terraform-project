@@ -20,6 +20,7 @@ The infrastructure includes:
    - Domain registered through Hostinger
    - Example: `platform-online.shop`
 
+
 2. **SSL Certificate** 🔒
    - Certificate obtained using Certbot Let's Encrypt
    - Certificate imported into AWS Certificate Manager (ACM)
