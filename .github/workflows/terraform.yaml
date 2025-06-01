@@ -1,0 +1,129 @@
+name: Terraform Workflow 
+run-name: Terraform ${{inputs.action}} on ${{ inputs.tribe}}-${{ inputs.environment }} Environment
+permissions:
+  contents: read
+  id-token: write
+on:
+  workflow_dispatch:
+    inputs:
+      tribe:
+        description: 'Please type aws account project'
+        required: true
+        type: choice
+        options:
+          - datavisynn
+      environment:
+        description: 'Please type The Environment To Run Terraform Command on:- '
+        required: true
+        type: choice
+        options:
+          - test
+          - stg
+          - prod
+      action:
+        description: 'Please Select The Command To Run { plan , apply, destroy }'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+jobs:
+  terraform-action:
+    environment: ${{ inputs.tribe }}-${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Install AWS CLI v2
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install --update
+      - name: Install kubectl
+        run: |
+          # installation steps for kubectl from the docs
+          # NOTE: you should use version of kubectl that matches the version of the cluster (a skew of 1 minor version lower/higher is fine)
+          curl -LO https://dl.k8s.io/release/v1.33.0/bin/linux/amd64/kubectl
+          sudo install -o root -g root -m 0755 kubectl /usr/bin/kubectl
+      - name: Install Helm v3
+        run: |
+          # installation steps for helm from the docs
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          sudo ./get_helm.sh
+      # the aws role to assume
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-oidc-role
+          aws-region: eu-west-1
+      - name: Generate Kubeconfig
+        run: |
+          # Define cluster name based on tribe and environment
+          cluster_name="${{ inputs.tribe }}-${{ inputs.environment }}-eks"
+          
+          # Check if cluster exists
+          if aws eks describe-cluster --region eu-west-1 --name $cluster_name 2>/dev/null; then
+            echo "Cluster exists, generating kubeconfig..."
+            aws eks --region eu-west-1 update-kubeconfig --name $cluster_name --role-arn arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/terraform-role
+            # Test the connection to the cluster
+            kubectl get nodes
+            helm ls -A
+          else
+            echo "Cluster does not exist yet, skipping kubeconfig generation..."
+          fi
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Terraform Init
+        run: |
+          cd projects/${{ inputs.tribe }}/${{ inputs.environment }}
+          terraform init 
+      - name: Terraform Validate
+        run: |
+          cd projects/${{ inputs.tribe }}/${{ inputs.environment }}
+          # Check if any Terraform files (*.tf) exist and fail if none are found
+          if ! ls *.tf 1> /dev/null 2>&1; then
+              echo "No Terraform files (*.tf) found."
+              exit 1
+          fi
+          # validate terraform syntax
+          terraform validate
+      - name: Terraform Plan
+        if: ${{ inputs.action == 'plan'}}
+        run: |
+          cd projects/${{ inputs.tribe }}/${{ inputs.environment }}
+          terraform plan -var-file ${{ inputs.environment }}.tfvars
+      - name: Conftest Prevent Deletion Check for Prod Environments
+        if: ${{ contains(inputs.environment, 'prod') }}
+        run: |
+          # installation steps for conftest from the docs
+          LATEST_VERSION=$(wget -O - "https://api.github.com/repos/open-policy-agent/conftest/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | cut -c 2-)
+          ARCH=$(arch)
+          SYSTEM=$(uname)
+          wget "https://github.com/open-policy-agent/conftest/releases/download/v${LATEST_VERSION}/conftest_${LATEST_VERSION}_${SYSTEM}_${ARCH}.tar.gz"
+          tar xzf conftest_${LATEST_VERSION}_${SYSTEM}_${ARCH}.tar.gz
+          sudo mv conftest /usr/local/bin
+          # print the version of conftest
+          conftest --version
+          # save opa dir path
+          OPA_DIR=$(pwd)/opa_policy
+          # generate the terraform plan
+          cd projects/${{ inputs.tribe }}/${{ inputs.environment }}
+          # redirect only stdout to /dev/null, print stderr
+          terraform plan -var-file ${{ inputs.environment }}.tfvars -out=plan.tfplan > /dev/null
+          terraform show -json plan.tfplan > plan.json
+          conftest test plan.json -p $OPA_DIR
+      - name: Terraform Apply
+        if: ${{ inputs.action  == 'apply' }}
+        run: |
+          cd projects/${{ inputs.tribe }}/${{ inputs.environment }}
+          terraform apply -var-file ${{ inputs.environment }}.tfvars -auto-approve
+      - name: Terraform Destroy
+        if: ${{ inputs.action  == 'destroy' }}
+        run: |
+          cd projects/${{ inputs.tribe }}/${{ inputs.environment }}
+          terraform destroy -var-file ${{ inputs.environment }}.tfvars -auto-approve
+
+          
